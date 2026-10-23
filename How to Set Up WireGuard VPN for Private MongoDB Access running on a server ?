@@ -1,0 +1,91 @@
+1. Install WireGuard on Ubuntu
+
+sudo apt update
+sudo apt install -y wireguard
+
+2. Create the configuration directory and generate the server keys: 
+sudo install -d -m 700 /etc/wireguard
+sudo sh -c 'umask 077; wg genkey > /etc/wireguard/server.key'
+sudo sh -c 'wg pubkey < /etc/wireguard/server.key > /etc/wireguard/server.pub'
+
+3. Generate the developer's WireGuard keys
+umask 077
+wg genkey > developer.key
+wg pubkey < developer.key > developer.pub
+
+4. Configure the WireGuard server
+sudo nano /etc/wireguard/wg0.conf
+
+Add the following, replacing the placeholders:
+
+[Interface]
+Address = 10.67.69.1/24
+ListenPort = 51820
+PrivateKey = <SERVER_PRIVATE_KEY>
+
+[Peer]
+# Authorized developer
+PublicKey = <DEVELOPER_PUBLIC_KEY>
+AllowedIPs = 10.67.69.2/32
+
+
+Secure the file:
+sudo chmod 600 /etc/wireguard/wg0.conf
+
+Start WireGuard and enable it at boot:
+sudo systemctl enable --now wg-quick@wg0
+
+Check the interface:
+ip -br addr show wg0
+sudo wg show
+
+5. Configure the firewall
+Allow WireGuard's UDP port:
+sudo ufw allow 51820/udp
+
+6. Deploy MongoDB using Docker Compose
+services:
+  mongodb:
+    image: mongo:8.2.3
+    container_name: mongodb8
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: abc
+      MONGO_INITDB_ROOT_PASSWORD: LVG7CjfUYwvj0uqT
+    ports:
+      - "10.67.69.1:27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    networks:
+      - internal-network
+
+networks:
+  internal-network:
+    external: true
+
+volumes:
+  mongodb-data:
+
+7. Generate the developer's WireGuard configuration File
+SERVER_PUBLIC_KEY=$(sudo cat /etc/wireguard/server.pub)
+DEVELOPER_PRIVATE_KEY=$(cat ~/developer.key)
+
+sudo tee /etc/wireguard/developer.conf >/dev/null <<EOF
+[Interface]
+PrivateKey = ${DEVELOPER_PRIVATE_KEY}
+Address = 10.67.69.2/24
+
+[Peer]
+PublicKey = ${SERVER_PUBLIC_KEY}
+Endpoint = YOUR_SERVER_PUBLIC_IP:51820
+AllowedIPs = 10.67.69.1/32
+PersistentKeepalive = 25
+EOF
+
+sudo chmod 600 /etc/wireguard/developer.conf
+
+8. Connect and verify the VPN on developer's machine
+Install the official WireGuard client for the operating system.
+Import developer.conf.
+Activate the tunnel.
+Ask the developer to use the string fomrat like this in mongodb compass: mongodb://10.67.69.1:27017/xyz?authSource=xyz
